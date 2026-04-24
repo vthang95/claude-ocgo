@@ -55,3 +55,4 @@ claude
 - `qwen3.5-plus`
 - `minimax-m2.7`
 - `minimax-m2.5`
+- `kimi-k2.6`

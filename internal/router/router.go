@@ -7,6 +7,7 @@ import (
 var (
 	qwenRe    = regexp.MustCompile(`(?i)^qwen`)
 	minimaxRe = regexp.MustCompile(`(?i)^minimax`)
+	kimiRe    = regexp.MustCompile(`(?i)^kimi`)
 )
 
 func RouteModel(model string) string {
@@ -15,6 +16,9 @@ func RouteModel(model string) string {
 	}
 	if minimaxRe.MatchString(model) {
 		return "minimax"
+	}
+	if kimiRe.MatchString(model) {
+		return "qwen"
 	}
 	return "qwen"
 }
