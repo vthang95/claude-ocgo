@@ -214,11 +214,11 @@ func startServer() {
 	fmt.Printf("Config dir: %s\n", config.ConfigDir())
 	fmt.Printf("Log dir: %s\n", config.LogDir())
 
-	logger.WriteEvent("SERVER_START", map[string]interface{}{
-		"addr":  addr,
-		"upstream": config.UPSTREAM_BASE,
-		"model": config.DEFAULT_MODEL,
-		"fallback": config.WITH_FALLBACK,
+	logger.WriteEvent("SERVER_START", map[string]any{
+		"addr":           addr,
+		"upstream":       config.UPSTREAM_BASE,
+		"model":          config.DEFAULT_MODEL,
+		"fallback":       config.WITH_FALLBACK,
 		"overwriteModel": config.OVERWRITE_MODEL,
 	})
 
@@ -229,7 +229,7 @@ func startServer() {
 	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
 	go func() {
 		sig := <-sigCh
-		logger.WriteEvent("SERVER_STOP", map[string]interface{}{
+		logger.WriteEvent("SERVER_STOP", map[string]any{
 			"signal": sig.String(),
 		})
 		logger.Close()
@@ -239,7 +239,7 @@ func startServer() {
 	}()
 
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		logger.WriteEvent("SERVER_ERROR", map[string]interface{}{
+		logger.WriteEvent("SERVER_ERROR", map[string]any{
 			"error": err.Error(),
 		})
 		fmt.Fprintf(os.Stderr, "server error: %v\n", err)
@@ -265,7 +265,7 @@ func recoveryMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if err := recover(); err != nil {
-				logger.WriteEvent("SERVER_CRASH", map[string]interface{}{
+				logger.WriteEvent("SERVER_CRASH", map[string]any{
 					"method": r.Method,
 					"path":   r.URL.Path,
 					"panic":  fmt.Sprintf("%v", err),
@@ -458,4 +458,3 @@ func logsServer(args []string) {
 		}
 	}
 }
-

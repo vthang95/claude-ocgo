@@ -12,9 +12,9 @@ import (
 )
 
 var (
-	reqLog    *os.File
+	reqLog     *os.File
 	verboseLog *os.File
-	logMu     sync.Mutex
+	logMu      sync.Mutex
 )
 
 func Init() {
@@ -37,12 +37,12 @@ func Init() {
 	verboseLog = v
 }
 
-func WriteLog(tag string, data interface{}) {
+func WriteLog(tag string, data any) {
 	writeVerboseEntry(tag, data)
 	fmt.Printf("[LOG] %s\n", tag)
 }
 
-func WriteLogVerbose(tag string, data interface{}) {
+func WriteLogVerbose(tag string, data any) {
 	b, _ := json.Marshal(data)
 	writeVerboseEntry(tag, data)
 	fmt.Printf("[LOG] %s (%d chars)\n", tag, len(b))
@@ -63,8 +63,20 @@ func WriteRequest(line string) {
 
 // WriteEvent logs a lifecycle event (start, stop, crash) to both the
 // verbose log and the request log so it shows up in "ocgo logs".
-func WriteEvent(tag string, data interface{}) {
+func WriteEvent(tag string, data any) {
 	writeVerboseEntry(tag, data)
+	writeReqLine("[EVENT]", tag, data)
+}
+
+// WriteError logs an error to both the verbose log and the request log
+// so it shows up in "ocgo logs" without --verbose.
+func WriteError(tag string, data any) {
+	writeVerboseEntry(tag, data)
+	writeReqLine("[ERROR]", tag, data)
+	fmt.Printf("[ERROR] %s\n", tag)
+}
+
+func writeReqLine(level, tag string, data any) {
 	if reqLog == nil {
 		return
 	}
@@ -72,9 +84,11 @@ func WriteEvent(tag string, data interface{}) {
 	logMu.Lock()
 	defer logMu.Unlock()
 	reqLog.WriteString(time.Now().UTC().Format(time.RFC3339))
-	reqLog.WriteString(" [EVENT] ")
+	reqLog.WriteString(" ")
+	reqLog.WriteString(level)
+	reqLog.WriteString(" ")
 	reqLog.WriteString(tag)
-	if len(b) > 0 {
+	if len(b) > 0 && string(b) != "null" {
 		reqLog.WriteString(" ")
 		reqLog.Write(b)
 	}
@@ -90,11 +104,11 @@ func Close() {
 	}
 }
 
-func writeVerboseEntry(tag string, data interface{}) {
+func writeVerboseEntry(tag string, data any) {
 	if verboseLog == nil {
 		return
 	}
-	entry := map[string]interface{}{
+	entry := map[string]any{
 		"ts":   time.Now().UTC().Format(time.RFC3339),
 		"tag":  tag,
 		"data": data,

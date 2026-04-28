@@ -65,10 +65,10 @@ func RegisterMessages(mux *http.ServeMux) {
 
 		// Original behavior without fallback
 		var err error
-		if route == "minimax" {
+		if route == "anthropic" {
 			err = services.ForwardMiniMax(body, w, r)
 		} else {
-			err = services.ForwardQwen(body, w, r)
+			err = services.ForwardOpenAI(body, w, r)
 		}
 
 		if err != nil {
@@ -135,10 +135,10 @@ func tryWithFallback(body map[string]any, w http.ResponseWriter, r *http.Request
 // tryForward attempts to forward to a service and returns the error
 func tryForward(body map[string]any, w http.ResponseWriter, r *http.Request, route string) error {
 	var err error
-	if route == "minimax" {
+	if route == "anthropic" {
 		err = services.ForwardMiniMax(body, w, r)
 	} else {
-		err = services.ForwardQwen(body, w, r)
+		err = services.ForwardOpenAI(body, w, r)
 	}
 
 	if err != nil {

@@ -7,13 +7,13 @@ import (
 
 func RegisterHealth(mux *http.ServeMux) {
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]interface{}{"ok": true})
+		json.NewEncoder(w).Encode(map[string]any{"ok": true})
 	})
 
 	mux.HandleFunc("GET /v1/models", func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		json.NewEncoder(w).Encode(map[string]any{
 			"object": "list",
-			"data": []map[string]interface{}{
+			"data": []map[string]any{
 				{"id": "qwen3.6-plus", "object": "model", "created": 0, "owned_by": "opencode-go"},
 				{"id": "qwen3.5-plus", "object": "model", "created": 0, "owned_by": "opencode-go"},
 				{"id": "glm-5.1", "object": "model", "created": 0, "owned_by": "opencode-go"},

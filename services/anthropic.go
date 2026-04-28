@@ -13,12 +13,12 @@ import (
 	"github.com/vthang95/claude-ocgo/internal/logger"
 )
 
-func ForwardMiniMax(body map[string]interface{}, w http.ResponseWriter, r *http.Request) error {
+func ForwardMiniMax(body map[string]any, w http.ResponseWriter, r *http.Request) error {
 	stream := body["stream"] == true
 
 	body["model"] = config.DEFAULT_MODEL
 	bodyBytes, _ := json.Marshal(body)
-	logger.WriteLog("MINIMAX_REQUEST", map[string]interface{}{
+	logger.WriteLog("MINIMAX_REQUEST", map[string]any{
 		"model":   body["model"],
 		"stream":  stream,
 		"bodyLen": len(bodyBytes),
@@ -68,11 +68,11 @@ func forwardMiniMaxNonStream(w http.ResponseWriter, bodyBytes []byte) error {
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		logger.WriteLog("MINIMAX_NONSTREAM_ERROR", map[string]interface{}{"message": err.Error()})
+		logger.WriteError("MINIMAX_NONSTREAM_ERROR", map[string]any{"message": err.Error()})
 		w.WriteHeader(http.StatusBadGateway)
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		json.NewEncoder(w).Encode(map[string]any{
 			"type": "error",
-			"error": map[string]interface{}{
+			"error": map[string]any{
 				"type":    "api_error",
 				"message": err.Error(),
 			},
@@ -83,18 +83,17 @@ func forwardMiniMaxNonStream(w http.ResponseWriter, bodyBytes []byte) error {
 
 	respBody, _ := io.ReadAll(resp.Body)
 
-	logger.WriteLog("MINIMAX_NONSTREAM_UPSTREAM", map[string]interface{}{
+	logger.WriteLog("MINIMAX_NONSTREAM_UPSTREAM", map[string]any{
 		"status": resp.StatusCode,
 		"bytes":  len(respBody),
 	})
 
 	if resp.StatusCode >= 400 {
-		var parsed map[string]interface{}
-		if json.Unmarshal(respBody, &parsed) == nil {
-			if _, ok := parsed["error"]; ok {
-				logger.WriteLog("MINIMAX_ERROR_RESPONSE", map[string]interface{}{"error": parsed["error"]})
-			}
-		}
+		preview := string(respBody[:minInt(500, len(respBody))])
+		logger.WriteError("MINIMAX_ERROR_RESPONSE", map[string]any{
+			"status": resp.StatusCode,
+			"body":   preview,
+		})
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -111,12 +110,12 @@ func forwardMiniMaxStream(w http.ResponseWriter, bodyBytes []byte) error {
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		logger.WriteLog("MINIMAX_STREAM_ERROR", map[string]interface{}{"message": err.Error()})
+		logger.WriteError("MINIMAX_STREAM_ERROR", map[string]any{"message": err.Error()})
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprintf(w, "event: error\ndata: %s\n\n", mustMarshal(map[string]interface{}{
+		fmt.Fprintf(w, "event: error\ndata: %s\n\n", mustMarshal(map[string]any{
 			"type": "error",
-			"error": map[string]interface{}{
+			"error": map[string]any{
 				"type":    "api_error",
 				"message": err.Error(),
 			},
@@ -125,7 +124,19 @@ func forwardMiniMaxStream(w http.ResponseWriter, bodyBytes []byte) error {
 	}
 	defer resp.Body.Close()
 
-	logger.WriteLog("MINIMAX_STREAM_UPSTREAM", map[string]interface{}{"status": resp.StatusCode})
+	logger.WriteLog("MINIMAX_STREAM_UPSTREAM", map[string]any{"status": resp.StatusCode})
+
+	if resp.StatusCode >= 400 {
+		errData, _ := io.ReadAll(resp.Body)
+		logger.WriteError("MINIMAX_STREAM_UPSTREAM_ERROR", map[string]any{
+			"status": resp.StatusCode,
+			"body":   string(errData[:minInt(500, len(errData))]),
+		})
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(resp.StatusCode)
+		w.Write(errData)
+		return nil
+	}
 
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -145,11 +156,11 @@ func forwardMiniMaxStream(w http.ResponseWriter, bodyBytes []byte) error {
 		}
 	}
 
-	logger.WriteLog("MINIMAX_STREAM_DONE", map[string]interface{}{})
+	logger.WriteLog("MINIMAX_STREAM_DONE", map[string]any{})
 	return scanner.Err()
 }
 
-func mustMarshal(v interface{}) string {
+func mustMarshal(v any) string {
 	b, _ := json.Marshal(v)
 	return string(b)
 }

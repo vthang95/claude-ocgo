@@ -5,20 +5,16 @@ import (
 )
 
 var (
-	qwenRe    = regexp.MustCompile(`(?i)^qwen`)
-	minimaxRe = regexp.MustCompile(`(?i)^minimax`)
-	kimiRe    = regexp.MustCompile(`(?i)^kimi`)
+	openaiRe    = regexp.MustCompile(`(?i)^qwen|^kimi|^opencode-go/qwen|^opencode-go/kimi`)
+	anthropicRe = regexp.MustCompile(`(?i)^minimax|^opencode-go/minimax`)
 )
 
 func RouteModel(model string) string {
-	if qwenRe.MatchString(model) {
-		return "qwen"
+	if openaiRe.MatchString(model) {
+		return "openai"
 	}
-	if minimaxRe.MatchString(model) {
-		return "minimax"
+	if anthropicRe.MatchString(model) {
+		return "anthropic"
 	}
-	if kimiRe.MatchString(model) {
-		return "qwen"
-	}
-	return "qwen"
+	return "openai"
 }
