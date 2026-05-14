@@ -5,7 +5,7 @@ import (
 )
 
 var (
-	openaiRe    = regexp.MustCompile(`(?i)^qwen|^kimi|^opencode-go/qwen|^opencode-go/kimi`)
+	openaiRe    = regexp.MustCompile(`(?i)^qwen|^kimi|^glm-5|^opencode-go/qwen|^opencode-go/kimi|^opencode-go/glm`)
 	anthropicRe = regexp.MustCompile(`(?i)^minimax|^opencode-go/minimax`)
 )
 

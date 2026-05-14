@@ -12,6 +12,8 @@ var FallbackModels = []string{
 	"minimax-m2.7",
 	"minimax-m2.5",
 	"kimi-k2.6",
+	"glm-5.1",
+	"glm-5",
 }
 
 var (
