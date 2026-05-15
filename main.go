@@ -26,11 +26,12 @@ Usage:
   ocgo <command> [flags]
 
 Commands:
-  run     Start the proxy server
-  auth    Authenticate with GitHub Copilot
-  stop    Stop daemon
-  status  Show daemon status
-  logs    Tail daemon logs (--verbose for full details)
+  run                Start the proxy server
+  copilot auth       Authenticate with GitHub Copilot
+  copilot usage      Show Copilot usage/quota
+  stop               Stop daemon
+  status             Show daemon status
+  logs               Tail daemon logs (--verbose for full details)
 
 Run flags:
   -p, --port           <port>     Listen port (default: 14242, env: PORT)
@@ -42,7 +43,7 @@ Run flags:
   -d, --daemon                    Run server in background (daemon mode)
 
 API key is read from OPENCODE_API_KEY environment variable.
-For Copilot, run 'ocgo auth' first to authenticate with GitHub.
+For Copilot, run 'ocgo copilot auth' first to authenticate with GitHub.
 `
 
 func main() {
@@ -54,8 +55,20 @@ func main() {
 	switch os.Args[1] {
 	case "run":
 		runServer(os.Args[2:])
-	case "auth":
-		authServer()
+	case "copilot":
+		if len(os.Args) < 3 {
+			fmt.Fprintf(os.Stderr, "error: missing copilot subcommand\n\n%s", usage)
+			os.Exit(1)
+		}
+		switch os.Args[2] {
+		case "auth":
+			authServer()
+		case "usage", "quota":
+			usageServer()
+		default:
+			fmt.Fprintf(os.Stderr, "unknown copilot command: %s\n\n%s", os.Args[2], usage)
+			os.Exit(1)
+		}
 	case "stop":
 		stopServer()
 	case "status":
@@ -75,6 +88,26 @@ func authServer() {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+func usageServer() {
+	githubToken := config.COPILOT_GITHUB_TOKEN
+	if githubToken == "" {
+		tok, err := copilot.ReadGitHubToken()
+		if err != nil || tok == "" {
+			fmt.Fprintln(os.Stderr, "error: no GitHub token found. Run 'ocgo copilot auth' to authenticate with GitHub Copilot.")
+			os.Exit(1)
+		}
+		githubToken = tok
+	}
+
+	usage, err := copilot.GetUsage(githubToken)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: failed to fetch usage: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Println(copilot.FormatUsageSummary(usage))
 }
 
 func runServer(args []string) {
@@ -211,28 +244,28 @@ func startServer() {
 			copilotAvailable = true
 			fmt.Println("Copilot: token acquired")
 
-				// Fetch available models from Copilot's API.
-				models, err := copilot.FetchModels(result.Token)
-				if err == nil {
-					claudeModels := 0
-					for _, m := range models {
-						if len(m.ID) >= 6 && m.ID[:6] == "claude" {
-							fmt.Printf("  - %s (%s)\n", m.ID, m.Vendor)
-							claudeModels++
-						}
+			// Fetch available models from Copilot's API.
+			models, err := copilot.FetchModels(result.Token)
+			if err == nil {
+				claudeModels := 0
+				for _, m := range models {
+					if len(m.ID) >= 6 && m.ID[:6] == "claude" {
+						fmt.Printf("  - %s (%s)\n", m.ID, m.Vendor)
+						claudeModels++
 					}
-					if claudeModels == 0 {
-						fmt.Println("  (no claude models available)")
-					}
-				} else {
-					fmt.Fprintf(os.Stderr, "Warning: failed to fetch Copilot models: %v\n", err)
 				}
+				if claudeModels == 0 {
+					fmt.Println("  (no claude models available)")
+				}
+			} else {
+				fmt.Fprintf(os.Stderr, "Warning: failed to fetch Copilot models: %v\n", err)
+			}
 		} else {
 			fmt.Fprintf(os.Stderr, "Warning: found GitHub token but failed to get Copilot token: %v\n", err)
 		}
 	} else if config.PROVIDER == "copilot" {
 		// Only fail if the user explicitly set copilot as the default provider.
-		fmt.Fprintln(os.Stderr, "error: --provider copilot requires a GitHub token. Run 'ocgo auth' to authenticate.")
+		fmt.Fprintln(os.Stderr, "error: --provider copilot requires a GitHub token. Run 'ocgo copilot auth' to authenticate.")
 		os.Exit(1)
 	}
 
@@ -244,6 +277,7 @@ func startServer() {
 
 	routes.RegisterHealth(mux)
 	routes.RegisterMessages(mux)
+	routes.RegisterUsage(mux)
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -270,7 +304,7 @@ func startServer() {
 			fmt.Println("API key: NOT SET")
 		}
 	}
-	copilotStatus := "not configured (run 'ocgo auth')"
+	copilotStatus := "not configured (run 'ocgo copilot auth')"
 	if copilotAvailable {
 		copilotStatus = "available"
 	}

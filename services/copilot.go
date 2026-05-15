@@ -12,7 +12,7 @@ import (
 func ForwardCopilot(body map[string]any, w http.ResponseWriter, r *http.Request) error {
 	token := copilot.GetCurrentToken()
 	if token == "" {
-		return fmt.Errorf("no copilot token available; run 'ocgo auth' to authenticate")
+		return fmt.Errorf("no copilot token available; run 'ocgo copilot auth' to authenticate")
 	}
 
 	// Translate model name before passing to generic forwarder.
