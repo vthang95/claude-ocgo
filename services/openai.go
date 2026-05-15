@@ -17,13 +17,17 @@ import (
 var httpClient = &http.Client{}
 
 func ForwardOpenAI(body map[string]any, w http.ResponseWriter, r *http.Request) error {
+	return ForwardGeneric(body, w, r, config.UPSTREAM_BASE, config.UPSTREAM_KEY, nil, "OPENAI", config.DEFAULT_MODEL)
+}
+
+func ForwardGeneric(body map[string]any, w http.ResponseWriter, r *http.Request, baseURL, apiKey string, extraHeaders map[string]string, logPrefix string, defaultModel string) error {
 	stream := body["stream"] == true
 	requestedModel := ""
 	if m, ok := body["model"].(string); ok {
 		requestedModel = m
 	}
 
-	logger.WriteLog("OPENAI_RAW_REQUEST", map[string]any{
+	logger.WriteLog(logPrefix+"_RAW_REQUEST", map[string]any{
 		"model":    requestedModel,
 		"stream":   stream,
 		"msgCount": len(toSlice(body["messages"])),
@@ -31,22 +35,21 @@ func ForwardOpenAI(body map[string]any, w http.ResponseWriter, r *http.Request) 
 
 	modelToUse := requestedModel
 	if modelToUse == "" {
-		modelToUse = config.DEFAULT_MODEL
+		modelToUse = defaultModel
 	}
 
 	openaiBody := convert.AnthropicToOpenAI(body, modelToUse)
 	openaiBody["model"] = modelToUse
 
 	if stream {
-		return forwardStreaming(openaiBody, body, w, r)
+		return forwardStreaming(openaiBody, body, w, r, baseURL, apiKey, extraHeaders, logPrefix)
 	}
-	return forwardNonStreaming(openaiBody, body, w, r)
+	return forwardNonStreaming(openaiBody, body, w, r, baseURL, apiKey, extraHeaders, logPrefix)
 }
 
 // newUpstreamRequest builds a POST request to the upstream API at the given path.
-// The caller must set auth headers and call newUpstreamRequestLog afterward.
-func newUpstreamRequest(path string, bodyBytes []byte) (*http.Request, error) {
-	reqURL := config.UPSTREAM_BASE + path
+func newUpstreamRequest(baseURL, path string, bodyBytes []byte) (*http.Request, error) {
+	reqURL := baseURL + path
 	req, err := http.NewRequest("POST", reqURL, strings.NewReader(string(bodyBytes)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
@@ -55,25 +58,30 @@ func newUpstreamRequest(path string, bodyBytes []byte) (*http.Request, error) {
 	return req, nil
 }
 
-func newUpstreamRequestLog(req *http.Request, bodyBytes []byte) {
-	logger.WriteLogVerbose("OPENAI_UPSTREAM_REQUEST", map[string]any{
+func newUpstreamRequestLog(req *http.Request, bodyBytes []byte, logPrefix string) {
+	logger.WriteLogVerbose(logPrefix+"_UPSTREAM_REQUEST", map[string]any{
 		"url":     req.URL.String(),
 		"bodyLen": len(bodyBytes),
 	})
 }
 
-func forwardNonStreaming(openaiBody, origBody map[string]any, w http.ResponseWriter, r *http.Request) error {
+func forwardNonStreaming(openaiBody, origBody map[string]any, w http.ResponseWriter, r *http.Request, baseURL, apiKey string, extraHeaders map[string]string, logPrefix string) error {
 	bodyBytes, _ := json.Marshal(openaiBody)
-	req, err := newUpstreamRequest("/chat/completions", bodyBytes)
+	req, err := newUpstreamRequest(baseURL, "/chat/completions", bodyBytes)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+config.UPSTREAM_KEY)
-	newUpstreamRequestLog(req, bodyBytes)
+	if apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
+	for k, v := range extraHeaders {
+		req.Header.Set(k, v)
+	}
+	newUpstreamRequestLog(req, bodyBytes, logPrefix)
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		logger.WriteError("OPENAI_REQUEST_ERROR", map[string]any{"message": err.Error()})
+		logger.WriteError(logPrefix+"_REQUEST_ERROR", map[string]any{"message": err.Error()})
 		return err
 	}
 	defer resp.Body.Close()
@@ -81,7 +89,7 @@ func forwardNonStreaming(openaiBody, origBody map[string]any, w http.ResponseWri
 	respBody, _ := io.ReadAll(resp.Body)
 
 	if resp.StatusCode != http.StatusOK {
-		logger.WriteError("OPENAI_UPSTREAM_ERROR_RESPONSE", map[string]any{
+		logger.WriteError(logPrefix+"_UPSTREAM_ERROR_RESPONSE", map[string]any{
 			"status": resp.StatusCode,
 			"body":   string(respBody[:minInt(500, len(respBody))]),
 		})
@@ -93,7 +101,7 @@ func forwardNonStreaming(openaiBody, origBody map[string]any, w http.ResponseWri
 
 	var upstreamJSON map[string]any
 	if err := json.Unmarshal(respBody, &upstreamJSON); err != nil {
-		logger.WriteError("OPENAI_UPSTREAM_NON_JSON_200", map[string]any{
+		logger.WriteError(logPrefix+"_UPSTREAM_NON_JSON_200", map[string]any{
 			"status":      resp.StatusCode,
 			"dataPreview": string(respBody[:minInt(500, len(respBody))]),
 		})
@@ -113,27 +121,32 @@ func forwardNonStreaming(openaiBody, origBody map[string]any, w http.ResponseWri
 	return nil
 }
 
-func forwardStreaming(openaiBody, origBody map[string]any, w http.ResponseWriter, r *http.Request) error {
+func forwardStreaming(openaiBody, origBody map[string]any, w http.ResponseWriter, r *http.Request, baseURL, apiKey string, extraHeaders map[string]string, logPrefix string) error {
 	openaiBody["stream"] = true
 
 	bodyBytes, _ := json.Marshal(openaiBody)
-	req, err := newUpstreamRequest("/chat/completions", bodyBytes)
+	req, err := newUpstreamRequest(baseURL, "/chat/completions", bodyBytes)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+config.UPSTREAM_KEY)
-	newUpstreamRequestLog(req, bodyBytes)
+	if apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
+	for k, v := range extraHeaders {
+		req.Header.Set(k, v)
+	}
+	newUpstreamRequestLog(req, bodyBytes, logPrefix)
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		logger.WriteError("OPENAI_STREAM_REQUEST_ERROR", map[string]any{"message": err.Error()})
+		logger.WriteError(logPrefix+"_STREAM_REQUEST_ERROR", map[string]any{"message": err.Error()})
 		return err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		errData, _ := io.ReadAll(resp.Body)
-		logger.WriteError("OPENAI_STREAM_UPSTREAM_ERROR", map[string]any{
+		logger.WriteError(logPrefix+"_STREAM_UPSTREAM_ERROR", map[string]any{
 			"status": resp.StatusCode,
 			"body":   string(errData[:minInt(500, len(errData))]),
 		})
@@ -165,7 +178,7 @@ func forwardStreaming(openaiBody, origBody map[string]any, w http.ResponseWriter
 		toolCallSlots:      make(map[int]*toolSlot),
 	}
 
-	return processStream(resp.Body, streamState, origBody)
+	return processStream(resp.Body, streamState, origBody, logPrefix)
 }
 
 type toolSlot struct {
@@ -281,7 +294,7 @@ func (s *streamState) handleToolCalls(toolCallDeltas []map[string]any) {
 	}
 }
 
-func processStream(body io.ReadCloser, s *streamState, origBody map[string]any) error {
+func processStream(body io.ReadCloser, s *streamState, origBody map[string]any, logPrefix string) error {
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 0, 1024*1024), 1024*1024)
 
@@ -301,7 +314,7 @@ func processStream(body io.ReadCloser, s *streamState, origBody map[string]any) 
 		}
 
 		if s.isFirst {
-			logger.WriteLog("OPENAI_STREAM_FIRST_CHUNK", map[string]any{"preview": line[:minInt(500, len(line))]})
+			logger.WriteLog(logPrefix+"_STREAM_FIRST_CHUNK", map[string]any{"preview": line[:minInt(500, len(line))]})
 			s.isFirst = false
 
 			msgID := "msg_" + randomHex(4)

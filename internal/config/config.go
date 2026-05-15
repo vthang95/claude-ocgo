@@ -17,19 +17,27 @@ var FallbackModels = []string{
 }
 
 var (
- PORT          string
- UPSTREAM_BASE string
- UPSTREAM_KEY  string
- DEFAULT_MODEL string
- WITH_FALLBACK bool
- OVERWRITE_MODEL bool
+	PORT                 string
+	UPSTREAM_BASE        string
+	UPSTREAM_KEY         string
+	DEFAULT_MODEL        string
+	WITH_FALLBACK        bool
+	OVERWRITE_MODEL      bool
+	PROVIDER             string
+	COPILOT_BASE_URL     string
+	COPILOT_GITHUB_TOKEN string
+	COPILOT_MODEL        string
 )
 
 func init() {
- PORT = envOrDefault("PORT", "14242")
- UPSTREAM_BASE = envOrDefault("OPENCODE_API_URL", "https://opencode.ai/zen/go/v1")
- UPSTREAM_KEY = os.Getenv("OPENCODE_API_KEY")
- DEFAULT_MODEL = envOrDefault("DEFAULT_MODEL", "qwen3.6-plus")
+	PORT = envOrDefault("PORT", "14242")
+	UPSTREAM_BASE = envOrDefault("OPENCODE_API_URL", "https://opencode.ai/zen/go/v1")
+	UPSTREAM_KEY = os.Getenv("OPENCODE_API_KEY")
+	DEFAULT_MODEL = envOrDefault("DEFAULT_MODEL", "qwen3.6-plus")
+	PROVIDER = envOrDefault("PROVIDER", "opencode-go")
+	COPILOT_BASE_URL = envOrDefault("COPILOT_BASE_URL", "https://api.githubcopilot.com")
+	COPILOT_GITHUB_TOKEN = os.Getenv("COPILOT_GITHUB_TOKEN")
+	COPILOT_MODEL = envOrDefault("COPILOT_MODEL", "claude-sonnet-4")
 }
 
 // ConfigDir returns the base directory for config files.
@@ -52,8 +60,8 @@ func LogDir() string {
 }
 
 func envOrDefault(key, fallback string) string {
- if v := os.Getenv(key); v != "" {
-  return v
- }
- return fallback
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
 }

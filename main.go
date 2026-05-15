@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/vthang95/claude-ocgo/internal/config"
+	"github.com/vthang95/claude-ocgo/internal/copilot"
 	"github.com/vthang95/claude-ocgo/internal/logger"
 	"github.com/vthang95/claude-ocgo/routes"
 )
@@ -26,19 +27,22 @@ Usage:
 
 Commands:
   run     Start the proxy server
+  auth    Authenticate with GitHub Copilot
   stop    Stop daemon
   status  Show daemon status
   logs    Tail daemon logs (--verbose for full details)
 
 Run flags:
-  -p, --port           <port>   Listen port (default: 14242, env: PORT)
-  -u, --upstream       <url>    Upstream base URL (env: OPENCODE_API_URL)
-  -m, --model          <model>  Default model (default: qwen3.6-plus, env: DEFAULT_MODEL)
+  -p, --port           <port>     Listen port (default: 14242, env: PORT)
+  -u, --upstream       <url>      Upstream base URL (env: OPENCODE_API_URL)
+  -m, --model          <model>    Default model (default: qwen3.6-plus, env: DEFAULT_MODEL)
+  -pv, --provider     <provider>  Upstream provider: opencode-go or copilot (env: PROVIDER)
   -wf, --with-fallback            Enable automatic fallback to alternative models on failure
   -om, --overwrite-model          Always use default model, ignore Claude's model setting
   -d, --daemon                    Run server in background (daemon mode)
 
 API key is read from OPENCODE_API_KEY environment variable.
+For Copilot, run 'ocgo auth' first to authenticate with GitHub.
 `
 
 func main() {
@@ -50,6 +54,8 @@ func main() {
 	switch os.Args[1] {
 	case "run":
 		runServer(os.Args[2:])
+	case "auth":
+		authServer()
 	case "stop":
 		stopServer()
 	case "status":
@@ -64,6 +70,13 @@ func main() {
 	}
 }
 
+func authServer() {
+	if err := copilot.RunAuthFlow(); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
 func runServer(args []string) {
 	fs := flag.NewFlagSet("run", flag.ExitOnError)
 	port := fs.String("port", config.PORT, "")
@@ -72,6 +85,8 @@ func runServer(args []string) {
 	upstreamShort := fs.String("u", config.UPSTREAM_BASE, "")
 	model := fs.String("model", config.DEFAULT_MODEL, "")
 	modelShort := fs.String("m", config.DEFAULT_MODEL, "")
+	provider := fs.String("provider", config.PROVIDER, "")
+	providerShort := fs.String("pv", config.PROVIDER, "")
 	withFallback := fs.Bool("with-fallback", false, "")
 	withFallbackShort := fs.Bool("wf", false, "")
 	overwriteModel := fs.Bool("overwrite-model", false, "")
@@ -89,6 +104,9 @@ func runServer(args []string) {
 	}
 	if *upstreamShort != config.UPSTREAM_BASE {
 		*upstream = *upstreamShort
+	}
+	if *providerShort != config.PROVIDER {
+		*provider = *providerShort
 	}
 	if *withFallbackShort {
 		*withFallback = true
@@ -109,6 +127,7 @@ func runServer(args []string) {
 	config.PORT = *port
 	config.UPSTREAM_BASE = *upstream
 	config.DEFAULT_MODEL = *model
+	config.PROVIDER = *provider
 
 	if *withFallback {
 		config.WITH_FALLBACK = true
@@ -176,6 +195,47 @@ func startServer() {
 	logger.Init()
 	defer logger.Close()
 
+	// Try to initialize Copilot token if GitHub credentials are available.
+	// This is optional — Copilot models just won't work if no token is found.
+	copilotAvailable := false
+	githubToken := config.COPILOT_GITHUB_TOKEN
+	if githubToken == "" {
+		if tok, err := copilot.ReadGitHubToken(); err == nil && tok != "" {
+			githubToken = tok
+		}
+	}
+	if githubToken != "" {
+		if result, err := copilot.GetCopilotToken(githubToken); err == nil {
+			copilot.SetCurrentToken(result.Token)
+			go copilot.RefreshLoop(githubToken, copilot.SetCurrentToken)
+			copilotAvailable = true
+			fmt.Println("Copilot: token acquired")
+
+				// Fetch available models from Copilot's API.
+				models, err := copilot.FetchModels(result.Token)
+				if err == nil {
+					claudeModels := 0
+					for _, m := range models {
+						if len(m.ID) >= 6 && m.ID[:6] == "claude" {
+							fmt.Printf("  - %s (%s)\n", m.ID, m.Vendor)
+							claudeModels++
+						}
+					}
+					if claudeModels == 0 {
+						fmt.Println("  (no claude models available)")
+					}
+				} else {
+					fmt.Fprintf(os.Stderr, "Warning: failed to fetch Copilot models: %v\n", err)
+				}
+		} else {
+			fmt.Fprintf(os.Stderr, "Warning: found GitHub token but failed to get Copilot token: %v\n", err)
+		}
+	} else if config.PROVIDER == "copilot" {
+		// Only fail if the user explicitly set copilot as the default provider.
+		fmt.Fprintln(os.Stderr, "error: --provider copilot requires a GitHub token. Run 'ocgo auth' to authenticate.")
+		os.Exit(1)
+	}
+
 	mux := http.NewServeMux()
 
 	handler := corsMiddleware(mux)
@@ -198,12 +258,23 @@ func startServer() {
 
 	addr := ":" + config.PORT
 	fmt.Printf("Proxy listening on http://127.0.0.1%s\n", addr)
-	fmt.Printf("Upstream: %s\n", config.UPSTREAM_BASE)
-	if config.UPSTREAM_KEY != "" {
-		fmt.Println("API key: set")
+	fmt.Printf("Default provider: %s\n", config.PROVIDER)
+	if config.PROVIDER == "copilot" {
+		fmt.Printf("Copilot base URL: %s\n", config.COPILOT_BASE_URL)
+		fmt.Printf("Copilot model: %s\n", config.COPILOT_MODEL)
 	} else {
-		fmt.Println("API key: NOT SET")
+		fmt.Printf("Upstream: %s\n", config.UPSTREAM_BASE)
+		if config.UPSTREAM_KEY != "" {
+			fmt.Println("API key: set")
+		} else {
+			fmt.Println("API key: NOT SET")
+		}
 	}
+	copilotStatus := "not configured (run 'ocgo auth')"
+	if copilotAvailable {
+		copilotStatus = "available"
+	}
+	fmt.Printf("Copilot: %s\n", copilotStatus)
 	fmt.Printf("Default model: %s\n", config.DEFAULT_MODEL)
 	if config.WITH_FALLBACK {
 		fmt.Printf("Fallback models: %v\n", config.FallbackModels)
@@ -217,6 +288,7 @@ func startServer() {
 	logger.WriteEvent("SERVER_START", map[string]any{
 		"addr":           addr,
 		"upstream":       config.UPSTREAM_BASE,
+		"provider":       config.PROVIDER,
 		"model":          config.DEFAULT_MODEL,
 		"fallback":       config.WITH_FALLBACK,
 		"overwriteModel": config.OVERWRITE_MODEL,
@@ -251,7 +323,7 @@ func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, anthropic-version, x-api-key")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, anthropic-version, x-api-key, x-request-id")
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusNoContent)
 			return

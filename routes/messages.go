@@ -63,11 +63,14 @@ func RegisterMessages(mux *http.ServeMux) {
 			return
 		}
 
-		// Original behavior without fallback
+		// Forward to the appropriate service
 		var err error
-		if route == "anthropic" {
+		switch route {
+		case "anthropic":
 			err = services.ForwardMiniMax(body, w, r)
-		} else {
+		case "copilot":
+			err = services.ForwardCopilot(body, w, r)
+		default:
 			err = services.ForwardOpenAI(body, w, r)
 		}
 
@@ -135,18 +138,17 @@ func tryWithFallback(body map[string]any, w http.ResponseWriter, r *http.Request
 // tryForward attempts to forward to a service and returns the error
 func tryForward(body map[string]any, w http.ResponseWriter, r *http.Request, route string) error {
 	var err error
-	if route == "anthropic" {
+	switch route {
+	case "anthropic":
 		err = services.ForwardMiniMax(body, w, r)
-	} else {
+	case "copilot":
+		err = services.ForwardCopilot(body, w, r)
+	default:
 		err = services.ForwardOpenAI(body, w, r)
 	}
 
 	if err != nil {
-		// Check if we got a successful response (even with error status from upstream)
-		// by checking if we already wrote to the response writer
 		return err
 	}
-
-	// If no error, request was successful
 	return nil
 }
