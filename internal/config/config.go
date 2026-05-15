@@ -14,6 +14,8 @@ var FallbackModels = []string{
 	"kimi-k2.6",
 	"glm-5.1",
 	"glm-5",
+	"deepseek-v4-flash",
+	"deepseek-v4-pro",
 }
 
 var (

@@ -18,6 +18,8 @@ var opencodeModels = []map[string]any{
 	{"id": "minimax-m2.5", "object": "model", "created": 0, "owned_by": "opencode-go"},
 	{"id": "mimo-v2-pro", "object": "model", "created": 0, "owned_by": "opencode-go"},
 	{"id": "mimo-v2-omni", "object": "model", "created": 0, "owned_by": "opencode-go"},
+	{"id": "deepseek-v4-flash", "object": "model", "created": 0, "owned_by": "opencode-go"},
+	{"id": "deepseek-v4-pro", "object": "model", "created": 0, "owned_by": "opencode-go"},
 }
 
 func RegisterHealth(mux *http.ServeMux) {
